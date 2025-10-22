@@ -1,8 +1,7 @@
-name: Publish to PyPI
+name: Publish to TestPyPI
 
 on:
-  release:
-    types: [published]
+  workflow_dispatch:  # Manual trigger for testing
 
 jobs:
   build-and-publish:
@@ -27,9 +26,9 @@ jobs:
     - name: Check package
       run: twine check dist/*
 
-    - name: Publish to PyPI
+    - name: Publish to TestPyPI
       env:
         TWINE_USERNAME: __token__
         TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
       run: |
-        twine upload dist/* --verbose
+        twine upload --repository testpypi dist/* --verbose
