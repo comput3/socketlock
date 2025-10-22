@@ -13,11 +13,40 @@ from typing import Any, Dict, Optional
 from .async_lock import AsyncSocketLock
 
 
+# Global event loop for sync locks to ensure thread safety
+_global_loop: Optional[asyncio.AbstractEventLoop] = None
+_global_loop_thread: Optional[threading.Thread] = None
+_global_loop_lock = threading.Lock()
+
+
+def _get_global_loop() -> asyncio.AbstractEventLoop:
+    """Get or create the global event loop for sync locks."""
+    global _global_loop, _global_loop_thread
+
+    with _global_loop_lock:
+        if _global_loop is None or not _global_loop.is_running():
+            _global_loop = asyncio.new_event_loop()
+
+            def run_loop():
+                asyncio.set_event_loop(_global_loop)
+                _global_loop.run_forever()
+
+            _global_loop_thread = threading.Thread(target=run_loop, daemon=True)
+            _global_loop_thread.start()
+
+            # Wait for loop to start
+            while not _global_loop.is_running():
+                pass
+
+    return _global_loop
+
+
 class SocketLock:
     """Synchronous wrapper for AsyncSocketLock.
 
     This class provides a synchronous interface to the async socket lock,
-    making it easy to use in non-async applications.
+    making it easy to use in non-async applications. Thread-safe by using
+    a global event loop shared across all instances.
     """
 
     def __init__(
@@ -36,8 +65,6 @@ class SocketLock:
             signature_seed: Custom seed for handshake signature (optional)
         """
         self._async_lock = AsyncSocketLock(name, lock_dir, timeout, signature_seed)
-        self._loop: Optional[asyncio.AbstractEventLoop] = None
-        self._thread: Optional[threading.Thread] = None
 
     @property
     def port(self) -> Optional[int]:
@@ -49,26 +76,10 @@ class SocketLock:
         """Get the process ID if lock is acquired."""
         return self._async_lock.pid
 
-    def _ensure_loop(self) -> None:
-        """Ensure an event loop is running in a background thread."""
-        if self._loop is None or not self._loop.is_running():
-            self._loop = asyncio.new_event_loop()
-
-            def run_loop():
-                asyncio.set_event_loop(self._loop)
-                self._loop.run_forever()
-
-            self._thread = threading.Thread(target=run_loop, daemon=True)
-            self._thread.start()
-
-            # Wait for loop to start
-            while not self._loop.is_running():
-                pass
-
     def _run_async(self, coro):
-        """Run an async coroutine in the background loop."""
-        self._ensure_loop()
-        future = asyncio.run_coroutine_threadsafe(coro, self._loop)
+        """Run an async coroutine in the global loop."""
+        loop = _get_global_loop()
+        future = asyncio.run_coroutine_threadsafe(coro, loop)
         return future.result()
 
     def acquire(self) -> None:
@@ -90,14 +101,6 @@ class SocketLock:
     def release(self) -> None:
         """Release the process lock."""
         self._run_async(self._async_lock.release())
-
-        # Clean up the event loop
-        if self._loop and self._loop.is_running():
-            self._loop.call_soon_threadsafe(self._loop.stop)
-            if self._thread:
-                self._thread.join(timeout=1)
-            self._loop = None
-            self._thread = None
 
     def get_lock_info(self) -> Optional[Dict[str, Any]]:
         """Get information about the current lock if one exists.
