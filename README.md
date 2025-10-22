@@ -2,6 +2,7 @@
 
 A robust, secure, and async-friendly process lock using TCP sockets with handshake protocol verification.
 
+[![CI](https://github.com/comput3/socketlock/actions/workflows/ci.yml/badge.svg)](https://github.com/comput3/socketlock/actions/workflows/ci.yml)
 [![PyPI version](https://badge.fury.io/py/socketlock.svg)](https://badge.fury.io/py/socketlock)
 [![Python Support](https://img.shields.io/pypi/pyversions/socketlock.svg)](https://pypi.org/project/socketlock/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
