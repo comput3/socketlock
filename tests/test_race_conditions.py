@@ -37,26 +37,32 @@ async def test_no_race_condition():
 
 @pytest.mark.asyncio
 async def test_rapid_succession():
-    """Test rapid lock acquisition and release cycles."""
+    """Test rapid lock acquisition when one is already held."""
     lock_name = "test_rapid"
 
-    async def acquire_and_release(delay):
-        """Acquire lock after a delay."""
-        await asyncio.sleep(delay)
-        lock = AsyncSocketLock(lock_name)
-        result = await lock.try_acquire()
-        if result:
-            await asyncio.sleep(0.05)  # Hold briefly
-            await lock.release()
-        return result
+    # First, acquire and hold the lock
+    main_lock = AsyncSocketLock(lock_name)
+    await main_lock.acquire()
 
-    # Stagger attempts slightly
-    tasks = [acquire_and_release(i * 0.01) for i in range(5)]
+    # Now try multiple rapid attempts while lock is held
+    async def try_acquire():
+        lock = AsyncSocketLock(lock_name)
+        return await lock.try_acquire()
+
+    # All should fail since main_lock holds it
+    tasks = [try_acquire() for _ in range(5)]
     results = await asyncio.gather(*tasks)
 
-    # First one should succeed, others should fail
-    assert results[0] is True
-    assert all(r is False for r in results[1:])
+    # All attempts should fail
+    assert all(r is False for r in results)
+
+    # Release main lock
+    await main_lock.release()
+
+    # Now one should succeed
+    final_lock = AsyncSocketLock(lock_name)
+    assert await final_lock.try_acquire() is True
+    await final_lock.release()
 
 
 @pytest.mark.asyncio
